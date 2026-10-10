@@ -39,8 +39,10 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET"
 
 if [[ -z "${SIGN_IDENTITY:-}" ]]; then
+    # Select by SHA-1 hash: the name is ambiguous when a renewed certificate
+    # with the same name is also in the keychain.
     SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
-        | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' | head -n1)"
+        | sed -n 's/^ *[0-9]*) \([0-9A-F]\{40\}\) "Apple Development:.*/\1/p' | head -n1)"
     SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 fi
 codesign --force --options runtime --sign "$SIGN_IDENTITY" "$APP"
