@@ -1,0 +1,14 @@
+# SwiftPM
+.build/
+.swiftpm/
+
+# App bundle produced by scripts/build-app.sh
+build/
+
+# Xcode (if the package is opened in Xcode)
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
