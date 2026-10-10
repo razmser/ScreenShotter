@@ -19,6 +19,14 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/Screenshotter" "$APP/Contents/MacOS/ScreenShotter"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
+# Release builds stamp the version from the tag; local builds keep Info.plist's.
+if [[ -n "${VERSION:-}" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
+fi
+if [[ -n "${BUILD_NUMBER:-}" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP/Contents/Info.plist"
+fi
+
 # Build all standard and Retina icon sizes from the transparent source artwork.
 ICONSET="build/AppIcon.iconset"
 mkdir -p "$ICONSET"
