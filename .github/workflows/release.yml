@@ -52,3 +52,22 @@ jobs:
             build/ScreenShotter-${{ steps.version.outputs.version }}.zip.sha256 \
             --title "ScreenShotter ${{ steps.version.outputs.version }}" \
             --notes-file build/release-notes.md
+
+      - name: Bump Homebrew cask
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sha256="$(cut -d ' ' -f 1 "build/ScreenShotter-$VERSION.zip.sha256")"
+          gh repo clone razmser/homebrew-tap build/homebrew-tap -- --depth 1
+          cd build/homebrew-tap
+          sed -i '' -E \
+            -e "s/^  version \".*\"$/  version \"$VERSION\"/" \
+            -e "s/^  sha256 \".*\"$/  sha256 \"$sha256\"/" \
+            Casks/screenshotter.rb
+          git diff --exit-code --quiet && { echo "Cask already at $VERSION"; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "screenshotter $VERSION"
+          gh auth setup-git
+          git push
