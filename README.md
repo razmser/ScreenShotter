@@ -19,6 +19,7 @@ Properly tested only on 26.5.2.
 | ⇧⌘3 | Capture the screen under the mouse |
 | ⇧⌘4 | Capture an area (drag; click = whole display; hold ⌥ on release to trim uniform margins; Esc / right-click cancels) |
 | ⇧⌘7 | Capture text/QR: select an area, its text (or QR code contents) is copied |
+| ⇧⌘5 | Record the screen (macOS 15+): click for the whole display or drag an area; press again or click ⏹ in the menu bar to stop. Saved as MP4 to the screenshots folder |
 
 Unassign system shortcuts in System Settings → Keyboard → Keyboard Shortcuts -> Screenshots to avoid conflicts.
 

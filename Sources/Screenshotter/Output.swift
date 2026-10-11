@@ -37,7 +37,7 @@ enum Output {
 
     /// Sets the Spotlight attribute macOS uses for its own screenshots, so Finder's
     /// "Screenshot" kind and smart folders include the file.
-    private static func markAsScreenCapture(_ url: URL) {
+    static func markAsScreenCapture(_ url: URL) {
         guard let value = try? PropertyListSerialization.data(fromPropertyList: true, format: .binary, options: 0)
         else { return }
         _ = value.withUnsafeBytes { bytes in
@@ -48,21 +48,34 @@ enum Output {
     /// Saves into the configured folder with a timestamped, non-clashing name.
     @discardableResult
     static func save(_ shot: Screenshot, settings: Settings = .shared) throws -> URL {
-        let folder = settings.saveFolder
         let format = settings.imageFormat
+        let url = try newFileURL(extension: format.fileExtension, settings: settings)
+        try write(shot, to: url, format: format)
+        return url
+    }
+
+    /// A timestamped, non-clashing file in the configured folder, which is created if needed.
+    static func newFileURL(prefix: String = "", extension fileExtension: String,
+                           settings: Settings = .shared) throws -> URL {
+        let folder = settings.saveFolder
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        let baseName = formatter.string(from: Date())
-        var url = folder.appendingPathComponent(baseName).appendingPathExtension(format.fileExtension)
+        let baseName = prefix + formatter.string(from: Date())
+        var url = folder.appendingPathComponent(baseName).appendingPathExtension(fileExtension)
         var index = 2
         while FileManager.default.fileExists(atPath: url.path) {
-            url = folder.appendingPathComponent("\(baseName) (\(index))").appendingPathExtension(format.fileExtension)
+            url = folder.appendingPathComponent("\(baseName) (\(index))").appendingPathExtension(fileExtension)
             index += 1
         }
-        try write(shot, to: url, format: format)
         return url
+    }
+
+    /// Puts a file on the pasteboard the way Finder copies one, e.g. a finished recording.
+    static func copyFile(_ url: URL) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([url as NSURL])
     }
 
     /// Copies and/or saves, then reports the result with a toast (or an alert on failure).

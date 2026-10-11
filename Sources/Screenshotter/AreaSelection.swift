@@ -1,17 +1,27 @@
 import AppKit
 
+/// The region the user picked, plus its frozen pixels.
+struct AreaSelection {
+    let screen: NSScreen
+    /// In the screen's points, top-left origin; nil when the whole display was picked.
+    let rect: CGRect?
+    let shot: Screenshot
+}
+
 /// Shows the frozen screen contents on every display and lets the user drag out a
 /// region. A click without dragging captures the whole display; holding ⌥ on
 /// release trims uniform margins from the selection; Esc cancels.
 final class AreaSelectionController {
     private var windows: [NSWindow] = []
-    private var completion: ((Screenshot?) -> Void)?
+    private var completion: ((AreaSelection?) -> Void)?
 
-    init(captures: [(screen: NSScreen, image: CGImage)], completion: @escaping (Screenshot?) -> Void) {
+    init(captures: [(screen: NSScreen, image: CGImage)], completion: @escaping (AreaSelection?) -> Void) {
         self.completion = completion
         for capture in captures {
             let view = SelectionView(frame: NSRect(origin: .zero, size: capture.screen.frame.size), image: capture.image)
-            view.onFinish = { [weak self] shot in self?.finish(shot) }
+            view.onFinish = { [weak self] picked in
+                self?.finish(picked.map { AreaSelection(screen: capture.screen, rect: $0.rect, shot: $0.shot) })
+            }
 
             let window = OverlayWindow(contentRect: capture.screen.frame, styleMask: .borderless,
                                        backing: .buffered, defer: false)
@@ -47,12 +57,12 @@ final class AreaSelectionController {
         finish(nil)
     }
 
-    private func finish(_ shot: Screenshot?) {
+    private func finish(_ selection: AreaSelection?) {
         guard let completion else { return }
         self.completion = nil
         windows.forEach { $0.orderOut(nil) }
         windows = []
-        completion(shot)
+        completion(selection)
     }
 }
 
@@ -62,7 +72,9 @@ private final class OverlayWindow: NSWindow {
 }
 
 private final class SelectionView: NSView {
-    var onFinish: ((Screenshot?) -> Void)?
+    /// `rect` is in view points (top-left origin), nil for the whole display.
+    typealias Picked = (shot: Screenshot, rect: CGRect?)
+    var onFinish: ((Picked?) -> Void)?
 
     private let image: CGImage
     private let nsImage: NSImage
@@ -199,7 +211,7 @@ private final class SelectionView: NSView {
         current = point(event)
         guard let selection, selection.width >= 3 || selection.height >= 3 else {
             // A click (no real drag) captures the whole display.
-            onFinish?(Screenshot(image: image, scale: scale))
+            onFinish?((Screenshot(image: image, scale: scale), nil))
             return
         }
         guard selection.width >= 3, selection.height >= 3 else {
@@ -215,7 +227,9 @@ private final class SelectionView: NSView {
             onFinish?(nil)
             return
         }
-        onFinish?(Screenshot(image: cropped, scale: scale))
+        let rect = CGRect(x: pixelRect.minX / scale, y: pixelRect.minY / scale,
+                          width: pixelRect.width / scale, height: pixelRect.height / scale)
+        onFinish?((Screenshot(image: cropped, scale: scale), rect))
     }
 
     /// Shrinks a pixel rect past uniform margins (e.g. window background around a

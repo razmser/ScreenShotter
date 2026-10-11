@@ -11,9 +11,10 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Shortcuts") {
-                ForEach(CaptureAction.allCases, id: \.self) { action in
+                ForEach(CaptureAction.available, id: \.self) { action in
                     ShortcutRecorder(label: action.label, shortcut: $settings.shortcuts[action],
-                                     conflicts: settings.shortcuts.filter { $0.key != action }.map(\.value),
+                                     conflicts: CaptureAction.available.filter { $0 != action }
+                                         .compactMap { settings.shortcuts[$0] },
                                      conflict: hotKeys.conflicts[action])
                 }
             }
@@ -42,6 +43,16 @@ struct SettingsView: View {
                     ForEach(ImageFormat.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
+            }
+
+            if #available(macOS 15, *) {
+                Section("Recording") {
+                    Toggle(isOn: $settings.showRecordingClicks) {
+                        Text("Show clicks")
+                        Text("Recordings are saved as MP4 to the folder above.")
+                    }
+                    .accessibilityLabel("Show clicks")
+                }
             }
 
             Section {

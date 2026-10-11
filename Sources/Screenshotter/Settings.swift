@@ -4,16 +4,26 @@ import Combine
 
 /// The ways to capture, each with its own global shortcut.
 enum CaptureAction: UInt32, CaseIterable {
-    case screen = 1, area, text
+    // Raw values are hotkey IDs and record the order actions were added (see the
+    // shortcut migration); case order is the menu order.
+    case screen = 1, area = 2, record = 4, text = 3
+
+    /// The actions this macOS version supports; recording needs macOS 15.
+    static var available: [CaptureAction] {
+        if #available(macOS 15, *) { return allCases }
+        return allCases.filter { $0 != .record }
+    }
 
     /// Menu title, e.g. "Capture Area".
-    var title: String { "Capture \(noun.prefix(1).uppercased())\(noun.dropFirst())" }
+    var title: String { "\(verb) \(noun.prefix(1).uppercased())\(noun.dropFirst())" }
     /// Sentence-case label for Settings, e.g. "Capture area".
-    var label: String { "Capture \(noun)" }
+    var label: String { "\(verb) \(noun)" }
+
+    private var verb: String { self == .record ? "Record" : "Capture" }
 
     private var noun: String {
         switch self {
-        case .screen: "screen"
+        case .screen, .record: "screen"
         case .area: "area"
         case .text: "text/QR"
         }
@@ -24,6 +34,7 @@ enum CaptureAction: UInt32, CaseIterable {
         case .screen: kVK_ANSI_3
         case .area: kVK_ANSI_4
         case .text: kVK_ANSI_7
+        case .record: kVK_ANSI_5
         }
         return Shortcut(keyCode: UInt32(key), modifiers: UInt32(cmdKey | shiftKey))
     }
@@ -33,6 +44,7 @@ enum CaptureAction: UInt32, CaseIterable {
         case .screen: "fullScreenShortcut"
         case .area: "areaShortcut"
         case .text: "textShortcut"
+        case .record: "recordShortcut"
         }
     }
 }
@@ -85,6 +97,7 @@ final class Settings: ObservableObject {
         static let saveFolder = "saveFolder"
         static let imageFormat = "imageFormat"
         static let showInMenuBar = "showInMenuBar"
+        static let showRecordingClicks = "showRecordingClicks"
     }
 
     private let defaults = UserDefaults.standard
@@ -119,6 +132,10 @@ final class Settings: ObservableObject {
     @Published var showInMenuBar: Bool {
         didSet { defaults.set(showInMenuBar, forKey: Keys.showInMenuBar) }
     }
+    /// Whether screen recordings highlight mouse clicks.
+    @Published var showRecordingClicks: Bool {
+        didSet { defaults.set(showRecordingClicks, forKey: Keys.showRecordingClicks) }
+    }
 
     private init() {
         var shortcuts: [CaptureAction: Shortcut] = [:]
@@ -131,15 +148,20 @@ final class Settings: ObservableObject {
         confirmBeforeClosing = defaults.object(forKey: Keys.confirmBeforeClosing) as? Bool ?? true
         imageFormat = defaults.string(forKey: Keys.imageFormat).flatMap(ImageFormat.init) ?? .png
         showInMenuBar = defaults.object(forKey: Keys.showInMenuBar) as? Bool ?? true
+        showRecordingClicks = defaults.object(forKey: Keys.showRecordingClicks) as? Bool ?? true
         if let path = defaults.string(forKey: Keys.saveFolder) {
             saveFolder = URL(fileURLWithPath: path, isDirectory: true)
         } else {
             saveFolder = URL.documentsDirectory.appending(path: "ScreenShots", directoryHint: .isDirectory)
         }
-        // The text shortcut was added later; don't let its default steal an existing one.
-        // Set after init so didSet persists the cleared shortcut.
-        if let text = shortcuts[.text], text == shortcuts[.screen] || text == shortcuts[.area] {
-            self.shortcuts[.text] = nil
+        // The text and record shortcuts were added later; don't let their defaults steal
+        // an existing one. Set after init so didSet persists the cleared shortcut.
+        for later in [CaptureAction.text, .record] {
+            guard let shortcut = self.shortcuts[later] else { continue }
+            let earlier = CaptureAction.allCases.filter { $0.rawValue < later.rawValue }
+            if earlier.contains(where: { self.shortcuts[$0] == shortcut }) {
+                self.shortcuts[later] = nil
+            }
         }
     }
 

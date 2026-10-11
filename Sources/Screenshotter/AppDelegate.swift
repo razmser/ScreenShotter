@@ -9,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var editors: [EditorWindowController] = []
     private var areaSelection: AreaSelectionController?
     private var isCapturing = false
+    /// The running `ScreenRecorder` (macOS 15+).
+    private var recorder: NSObject?
+    private var quitAfterRecording = false
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -18,13 +21,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         HotKeyManager.shared.onHotKey = { [weak self] action in self?.capture(action) }
         settings.$shortcuts
             .sink { shortcuts in
-                for action in CaptureAction.allCases {
+                for action in CaptureAction.available {
                     HotKeyManager.shared.set(action, shortcut: shortcuts[action])
                 }
             }
             .store(in: &cancellables)
         settings.$showInMenuBar
-            .sink { [weak self] visible in self?.statusItem.isVisible = visible }
+            .sink { [weak self] visible in self?.statusItem.isVisible = visible || self?.recorder != nil }
             .store(in: &cancellables)
         HotKeyManager.shared.$conflicts
             .sink { [weak self] conflicts in self?.updateStatusIcon(hasFailedShortcuts: !conflicts.isEmpty) }
@@ -50,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .screen: captureScreen()
         case .area: captureArea()
         case .text: captureText()
+        case .record: toggleRecording()
         }
     }
 
@@ -73,15 +77,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func captureArea() {
-        selectArea { [weak self] shot in self?.deliver(shot) }
+        selectArea { [weak self] selection in self?.deliver(selection.shot) }
     }
 
     /// Copies the text (or QR code contents) of a selected area.
     private func captureText() {
-        selectArea { shot in
+        selectArea { selection in
             Task {
                 do {
-                    let text = try await TextRecognition.recognize(shot.image)
+                    let text = try await TextRecognition.recognize(selection.shot.image)
                     guard !text.isEmpty else {
                         Toast.show("No text found")
                         return
@@ -97,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func selectArea(then handle: @escaping (Screenshot) -> Void) {
+    private func selectArea(then handle: @escaping (AreaSelection) -> Void) {
         guard !isCapturing, areaSelection == nil else { return }
         isCapturing = true
         Task {
@@ -105,9 +109,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             do {
                 let captures = try await ScreenCapture.capture(NSScreen.screens)
                 guard !captures.isEmpty else { return }
-                let selection = AreaSelectionController(captures: captures) { [weak self] shot in
+                let selection = AreaSelectionController(captures: captures) { [weak self] picked in
                     self?.areaSelection = nil
-                    if let shot { handle(shot) }
+                    if let picked { handle(picked) }
                     self?.returnFocusIfIdle()
                 }
                 areaSelection = selection
@@ -124,6 +128,99 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .copy: Output.export(shot, copy: true, save: false)
         case .save: Output.export(shot, copy: false, save: true)
         case .copyAndSave: Output.export(shot, copy: true, save: true)
+        }
+    }
+
+    // MARK: Recording
+
+    /// Picks an area (a click picks the whole display) and records it; while
+    /// recording, the shortcut or the menu-bar button stops.
+    private func toggleRecording() {
+        guard #available(macOS 15, *) else { return }
+        if let recorder = recorder as? ScreenRecorder {
+            recorder.stop()
+            return
+        }
+        selectArea { [weak self] selection in self?.startRecording(selection) }
+    }
+
+    @available(macOS 15, *)
+    private func startRecording(_ selection: AreaSelection) {
+        guard !isCapturing, recorder == nil else { return }
+        let url: URL
+        do {
+            url = try Output.newFileURL(prefix: "Screen Recording ", extension: "mp4")
+        } catch {
+            NSApp.activate()
+            NSAlert(error: error).runModal()
+            return
+        }
+        let recorder = ScreenRecorder(url: url)
+        // Owned before starting, so a failure reported while starting can't be lost or doubled.
+        self.recorder = recorder
+        recorder.onFinish = { [weak self, weak recorder] result in
+            guard let self, self.recorder === recorder else { return }
+            recordingFinished(result)
+        }
+        isCapturing = true
+        Task {
+            defer { isCapturing = false }
+            do {
+                try await recorder.start(screen: selection.screen, rect: selection.rect,
+                                         showsClicks: settings.showRecordingClicks)
+                if self.recorder === recorder { updateStatusItemForRecording() }
+            } catch {
+                if self.recorder === recorder { recordingFinished(.failure(error)) }
+            }
+        }
+    }
+
+    @objc private func stopRecording() {
+        if #available(macOS 15, *) { (recorder as? ScreenRecorder)?.stop() }
+    }
+
+    private func recordingFinished(_ result: Result<URL, Error>) {
+        recorder = nil
+        updateStatusItemForRecording()
+        if case .success(let url) = result { Output.markAsScreenCapture(url) }
+        if quitAfterRecording {
+            NSApp.reply(toApplicationShouldTerminate: true)
+            return
+        }
+        switch result {
+        case .success(let url):
+            var messages = ["Saved \(url.lastPathComponent)"]
+            switch settings.afterCapture {
+            case .openEditor:
+                // QuickTime Player, by default, can trim it.
+                NSWorkspace.shared.open(url)
+            case .copy, .copyAndSave:
+                Output.copyFile(url)
+                messages.insert("Copied to clipboard", at: 0)
+            case .save:
+                break
+            }
+            Toast.show(messages.joined(separator: "\n"))
+        case .failure(let error):
+            Task { await ScreenRecordingPermission.presentCaptureError(error) }
+        }
+    }
+
+    /// While recording, the menu-bar item is a stop button, shown even if the icon is hidden.
+    private func updateStatusItemForRecording() {
+        guard let button = statusItem?.button else { return }
+        if recorder != nil {
+            statusItem.menu = nil
+            button.image = NSImage(systemSymbolName: "stop.circle", accessibilityDescription: "Stop recording")
+            button.toolTip = "Stop recording"
+            button.target = self
+            button.action = #selector(stopRecording)
+            statusItem.isVisible = true
+        } else {
+            button.action = nil
+            statusItem.menu = makeStatusMenu()
+            statusItem.isVisible = settings.showInMenuBar
+            updateStatusIcon(hasFailedShortcuts: !HotKeyManager.shared.conflicts.isEmpty)
         }
     }
 
@@ -156,7 +253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The overlay sits above modal alerts and would hide the confirmation.
         areaSelection?.cancel()
         let unsaved = editors.filter { $0.hasUnexportedChanges() }
-        guard settings.confirmBeforeClosing, !unsaved.isEmpty else { return .terminateNow }
+        guard settings.confirmBeforeClosing, !unsaved.isEmpty else { return terminateAfterRecording() }
         NSApp.activate()
         let alert = EditorWindowController.makeCloseAlert(screenshots: unsaved.count)
         alert.buttons.first?.title = "Quit"
@@ -165,7 +262,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return .terminateCancel
         }
         if alert.suppressionButton?.state == .on { settings.confirmBeforeClosing = false }
-        return .terminateNow
+        return terminateAfterRecording()
+    }
+
+    /// Quitting mid-recording would leave an unplayable file, so finish it first.
+    private func terminateAfterRecording() -> NSApplication.TerminateReply {
+        guard #available(macOS 15, *), let recorder = recorder as? ScreenRecorder else { return .terminateNow }
+        quitAfterRecording = true
+        recorder.stop()
+        return .terminateLater
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -194,14 +299,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         updateStatusIcon(hasFailedShortcuts: !HotKeyManager.shared.conflicts.isEmpty)
+        statusItem.menu = makeStatusMenu()
+    }
+
+    /// Filled in by `menuNeedsUpdate` each time it opens.
+    private func makeStatusMenu() -> NSMenu {
         let menu = NSMenu()
         menu.delegate = self
-        statusItem.menu = menu
+        return menu
     }
 
     /// Badges the menu-bar icon while any global shortcut couldn't be registered.
     private func updateStatusIcon(hasFailedShortcuts: Bool) {
-        guard let button = statusItem?.button else { return }
+        guard recorder == nil, let button = statusItem?.button else { return }
         button.image = StatusIcon.makeImage(badged: hasFailedShortcuts)
         button.toolTip = hasFailedShortcuts ? "Some shortcuts are unavailable" : nil
     }
@@ -226,7 +336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                     accessibilityDescription: "Warning")
             menu.addItem(warning)
         }
-        for action in CaptureAction.allCases {
+        for action in CaptureAction.available {
             guard conflicts[action] == .otherApp, let shortcut = settings.shortcuts[action] else { continue }
             let warning = item("\(shortcut.displayString) for \(action.title) is used by another app…",
                                #selector(openSettings), nil)
@@ -235,7 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(warning)
         }
         if menu.numberOfItems > 0 { menu.addItem(.separator()) }
-        for action in CaptureAction.allCases {
+        for action in CaptureAction.available {
             let capture = item(action.title, #selector(captureFromMenu(_:)),
                                conflicts[action] == nil ? settings.shortcuts[action] : nil)
             capture.representedObject = action

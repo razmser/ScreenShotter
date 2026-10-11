@@ -28,15 +28,9 @@ enum ScreenCapture {
     /// toast, a status menu still fading out) are left out.
     static func capture(_ screens: [NSScreen]) async throws -> [(screen: NSScreen, image: CGImage)] {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        let pid = ProcessInfo.processInfo.processIdentifier
-        let hidden = content.windows.filter { $0.owningApplication?.processID == pid && $0.windowLayer != 0 }
-
         var result: [(screen: NSScreen, image: CGImage)] = []
         for screen in screens {
-            guard let id = screen.displayID,
-                  let display = content.displays.first(where: { $0.displayID == id })
-            else { continue }
-            let filter = SCContentFilter(display: display, excludingWindows: hidden)
+            guard let filter = filter(for: screen, in: content) else { continue }
             let config = SCStreamConfiguration()
             let scale = CGFloat(filter.pointPixelScale)
             config.width = Int(filter.contentRect.width * scale)
@@ -47,5 +41,15 @@ enum ScreenCapture {
             result.append((screen, image))
         }
         return result
+    }
+
+    /// The display showing `screen`, minus this app's floating windows.
+    static func filter(for screen: NSScreen, in content: SCShareableContent) -> SCContentFilter? {
+        guard let id = screen.displayID,
+              let display = content.displays.first(where: { $0.displayID == id })
+        else { return nil }
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let hidden = content.windows.filter { $0.owningApplication?.processID == pid && $0.windowLayer != 0 }
+        return SCContentFilter(display: display, excludingWindows: hidden)
     }
 }
