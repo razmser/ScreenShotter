@@ -17,12 +17,23 @@ Properly tested only on 26.5.2.
 | Default shortcut | Action |
 | --- | --- |
 | ⇧⌘3 | Capture the screen under the mouse |
-| ⇧⌘4 | Capture an area (drag; click = whole display; double-click = the window under the cursor, even if covered; hold ⌥ on release to trim uniform margins; Esc / right-click cancels) |
-| ⇧⌘5 | Record the screen (macOS 15+): click for the whole display, drag an area, or double-click a window to record just that window (other windows on top don't show); press again or click ⏹ in the menu bar to stop. Saved as MP4 to the screenshots folder |
-| ⇧⌘7 | Capture text/QR: select an area, its text (or QR code contents) is copied |
+| ⇧⌘4 | Capture an area |
+| ⇧⌘5 | Record the screen |
+| ⇧⌘7 | Capture text/QR: select an area, its text or QR code contents is copied to clipboard |
 
-Unassign system shortcuts in System Settings → Keyboard → Keyboard Shortcuts -> Screenshots to avoid conflicts.
+For area capture (⇧⌘4) and screen recording (⇧⌘5):
 
+- Drag to select an area.
+- Click to select the whole display.
+- Double-click to select the window under the cursor.
+
+For screenshots, hold ⌥ when releasing to trim uniform margins. Press Esc or
+right-click to cancel.
+
+Screen recording requires macOS 15+. Press ⇧⌘5 again or click ⏹ in the menu bar
+to stop. Recordings are saved as MP4 files in the screenshots folder.
+
+Unassign system shortcuts in System Settings → Keyboard → Keyboard Shortcuts → Screenshots to avoid conflicts.
 
 ## Build & run
 
