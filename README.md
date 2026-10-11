@@ -40,3 +40,15 @@ On first capture macOS asks for **Screen & System Audio Recording** permission
 The build script signs with your "Apple Development" identity if one exists, so
 the permission survives rebuilds. Set `SIGN_IDENTITY=-` for ad-hoc signing (you
 will then need to re-grant the permission after every rebuild).
+
+## Screen Recording permission after switching builds
+
+macOS ties Screen Recording permission to the app’s signature. Installing another
+ad-hoc build can leave ScreenShotter enabled in System Settings while captures
+still fail. Toggling the existing permission off and on may not fix it.
+
+Try a capture and choose **Reset Permission…** in the error dialog. This clears
+only ScreenShotter’s Screen Recording permission. Open System Settings from the
+next dialog, enable ScreenShotter, and relaunch it. If it isn’t listed, click **+**
+and select the app at the path shown in the dialog. Save open screenshots before
+restarting.

@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let scale = CGFloat(capture.image.width) / capture.screen.frame.width
                 deliver(Screenshot(image: capture.image, scale: scale))
             } catch {
-                presentCaptureError(error)
+                await ScreenRecordingPermission.presentCaptureError(error)
             }
         }
     }
@@ -113,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 areaSelection = selection
                 selection.begin()
             } catch {
-                presentCaptureError(error)
+                await ScreenRecordingPermission.presentCaptureError(error)
             }
         }
     }
@@ -187,24 +187,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func returnFocusIfIdle() {
         guard NSApp.isActive, editors.isEmpty, settingsWindow?.isVisible != true else { return }
         NSApp.hide(nil)
-    }
-
-    private func presentCaptureError(_ error: Error) {
-        NSApp.activate()
-        let alert = NSAlert()
-        alert.messageText = "Screen capture failed"
-        alert.informativeText = """
-            \(error.localizedDescription)
-
-            Make sure ScreenShotter is allowed in System Settings → Privacy & Security → \
-            Screen & System Audio Recording, then relaunch the app.
-            """
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn,
-           let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-        }
     }
 
     // MARK: Menus
