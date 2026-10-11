@@ -16,20 +16,40 @@ final class ScreenRecorder: NSObject {
         self.url = url
     }
 
-    /// `rect` is in the screen's points, top-left origin; nil records the whole display.
-    func start(screen: NSScreen, rect: CGRect?, showsClicks: Bool) async throws {
+    /// A picked window is recorded on its own, whatever covers it.
+    func start(_ selection: AreaSelection, showsClicks: Bool) async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        guard let filter = ScreenCapture.filter(for: screen, in: content) else {
-            throw SCStreamError(.noDisplayList)
+        let filter: SCContentFilter
+        var source: CGRect?
+        switch selection {
+        case .area(let screen, let rect, _):
+            guard let displayFilter = ScreenCapture.filter(for: screen, in: content) else {
+                throw SCStreamError(.noDisplayList)
+            }
+            filter = displayFilter
+            source = rect ?? CGRect(origin: .zero, size: displayFilter.contentRect.size)
+        case .window(let windowID):
+            // Through its display rather than a desktop-independent window filter, which draws
+            // click highlights at the wrong place. The recorded area doesn't follow the window.
+            guard let window = content.windows.first(where: { $0.windowID == windowID }),
+                  let display = content.displays.first(where: {
+                      $0.frame.contains(CGPoint(x: window.frame.midX, y: window.frame.midY))
+                  })
+            else { throw SCStreamError(.noWindowList) }
+            filter = SCContentFilter(display: display, including: [window])
+            let frame = window.frame.offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
+            source = frame.intersection(CGRect(origin: .zero, size: display.frame.size))
         }
-        let source = rect ?? CGRect(origin: .zero, size: filter.contentRect.size)
+        let size = source?.size ?? filter.contentRect.size
         let scale = CGFloat(filter.pointPixelScale)
         let config = SCStreamConfiguration()
         // H.264 needs even dimensions; shrink the source to match so nothing is rescaled.
-        config.width = max(2, Int(source.width * scale) / 2 * 2)
-        config.height = max(2, Int(source.height * scale) / 2 * 2)
-        config.sourceRect = CGRect(origin: source.origin, size: CGSize(width: CGFloat(config.width) / scale,
-                                                                       height: CGFloat(config.height) / scale))
+        config.width = max(2, Int(size.width * scale) / 2 * 2)
+        config.height = max(2, Int(size.height * scale) / 2 * 2)
+        if let source {
+            config.sourceRect = CGRect(origin: source.origin, size: CGSize(width: CGFloat(config.width) / scale,
+                                                                           height: CGFloat(config.height) / scale))
+        }
         config.captureResolution = .best
         config.minimumFrameInterval = CMTime(value: 1, timescale: 60)
         config.showsCursor = true

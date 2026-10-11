@@ -77,15 +77,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func captureArea() {
-        selectArea { [weak self] selection in self?.deliver(selection.shot) }
+        selectShot { [weak self] shot in self?.deliver(shot) }
     }
 
     /// Copies the text (or QR code contents) of a selected area.
     private func captureText() {
-        selectArea { selection in
+        selectShot { shot in
             Task {
                 do {
-                    let text = try await TextRecognition.recognize(selection.shot.image)
+                    let text = try await TextRecognition.recognize(shot.image)
                     guard !text.isEmpty else {
                         Toast.show("No text found")
                         return
@@ -96,6 +96,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     Toast.show(lines == 1 ? "Copied text" : "Copied \(lines) lines of text")
                 } catch {
                     Toast.show("Text recognition failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// Like `selectArea`, with a double-clicked window captured live on its own.
+    private func selectShot(then handle: @escaping (Screenshot) -> Void) {
+        selectArea { [weak self] selection in
+            switch selection {
+            case .area(_, _, let shot):
+                handle(shot)
+            case .window(let windowID):
+                self?.isCapturing = true
+                Task {
+                    defer { self?.isCapturing = false }
+                    do {
+                        handle(try await ScreenCapture.capture(windowID: windowID))
+                    } catch {
+                        await ScreenRecordingPermission.presentCaptureError(error)
+                    }
                 }
             }
         }
@@ -166,8 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task {
             defer { isCapturing = false }
             do {
-                try await recorder.start(screen: selection.screen, rect: selection.rect,
-                                         showsClicks: settings.showRecordingClicks)
+                try await recorder.start(selection, showsClicks: settings.showRecordingClicks)
                 if self.recorder === recorder { updateStatusItemForRecording() }
             } catch {
                 if self.recorder === recorder { recordingFinished(.failure(error)) }

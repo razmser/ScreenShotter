@@ -1,27 +1,30 @@
 import AppKit
 
-/// The region the user picked, plus its frozen pixels.
-struct AreaSelection {
-    let screen: NSScreen
-    /// In the screen's points, top-left origin; nil when the whole display was picked.
-    let rect: CGRect?
-    let shot: Screenshot
+/// What the user picked.
+enum AreaSelection {
+    /// A region of `screen` and its frozen pixels. `rect` is in the screen's points,
+    /// top-left origin; nil when the whole display was picked.
+    case area(screen: NSScreen, rect: CGRect?, shot: Screenshot)
+    /// A double-clicked window, to capture on its own (live, so whatever covers it
+    /// doesn't matter).
+    case window(CGWindowID)
 }
 
 /// Shows the frozen screen contents on every display and lets the user drag out a
-/// region. A click without dragging captures the whole display; holding ⌥ on
-/// release trims uniform margins from the selection; Esc cancels.
+/// region. A click without dragging captures the whole display, a double-click the
+/// window under it; holding ⌥ on release trims uniform margins from the selection;
+/// Esc cancels.
 final class AreaSelectionController {
     private var windows: [NSWindow] = []
     private var completion: ((AreaSelection?) -> Void)?
 
     init(captures: [(screen: NSScreen, image: CGImage)], completion: @escaping (AreaSelection?) -> Void) {
         self.completion = completion
+        // Matches the frozen image: activating this app later can bring its windows forward.
+        let windowList = ScreenCapture.normalWindows()
         for capture in captures {
-            let view = SelectionView(frame: NSRect(origin: .zero, size: capture.screen.frame.size), image: capture.image)
-            view.onFinish = { [weak self] picked in
-                self?.finish(picked.map { AreaSelection(screen: capture.screen, rect: $0.rect, shot: $0.shot) })
-            }
+            let view = SelectionView(screen: capture.screen, image: capture.image, windows: windowList)
+            view.onFinish = { [weak self] selection in self?.finish(selection) }
 
             let window = OverlayWindow(contentRect: capture.screen.frame, styleMask: .borderless,
                                        backing: .buffered, defer: false)
@@ -72,20 +75,26 @@ private final class OverlayWindow: NSWindow {
 }
 
 private final class SelectionView: NSView {
-    /// `rect` is in view points (top-left origin), nil for the whole display.
-    typealias Picked = (shot: Screenshot, rect: CGRect?)
-    var onFinish: ((Picked?) -> Void)?
+    var onFinish: ((AreaSelection?) -> Void)?
 
+    private let screen: NSScreen
     private let image: CGImage
     private let nsImage: NSImage
     private var start: CGPoint?
     private var current: CGPoint?
     private var mouse: CGPoint?
+    private let windows: [(id: CGWindowID, bounds: CGRect)]
+    /// A click picks the whole display only once it can't become a double-click.
+    /// Shared, so pressing on any display's overlay cancels it.
+    private static var pendingDisplayPick: DispatchWorkItem?
 
     private var scale: CGFloat { CGFloat(image.width) / bounds.width }
 
-    init(frame: NSRect, image: CGImage) {
+    init(screen: NSScreen, image: CGImage, windows: [(id: CGWindowID, bounds: CGRect)]) {
+        self.screen = screen
+        self.windows = windows
         self.image = image
+        let frame = NSRect(origin: .zero, size: screen.frame.size)
         self.nsImage = NSImage(cgImage: image, size: frame.size)
         super.init(frame: frame)
         wantsLayer = true
@@ -196,6 +205,8 @@ private final class SelectionView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         CaptureGlyph.selectionCursor.set()
+        Self.pendingDisplayPick?.cancel()
+        Self.pendingDisplayPick = nil
         start = point(event)
         current = start
         needsDisplay = true
@@ -210,8 +221,18 @@ private final class SelectionView: NSView {
     override func mouseUp(with event: NSEvent) {
         current = point(event)
         guard let selection, selection.width >= 3 || selection.height >= 3 else {
-            // A click (no real drag) captures the whole display.
-            onFinish?((Screenshot(image: image, scale: scale), nil))
+            // A click (no real drag) captures the whole display, a double-click the window under it.
+            let clickPoint = window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
+            if event.clickCount >= 2, let window = ScreenCapture.windowID(at: clickPoint, in: windows) {
+                onFinish?(.window(window))
+                return
+            }
+            let pick = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                onFinish?(.area(screen: screen, rect: nil, shot: Screenshot(image: image, scale: scale)))
+            }
+            Self.pendingDisplayPick = pick
+            DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: pick)
             return
         }
         guard selection.width >= 3, selection.height >= 3 else {
@@ -229,7 +250,7 @@ private final class SelectionView: NSView {
         }
         let rect = CGRect(x: pixelRect.minX / scale, y: pixelRect.minY / scale,
                           width: pixelRect.width / scale, height: pixelRect.height / scale)
-        onFinish?((Screenshot(image: cropped, scale: scale), rect))
+        onFinish?(.area(screen: screen, rect: rect, shot: Screenshot(image: cropped, scale: scale)))
     }
 
     /// Shrinks a pixel rect past uniform margins (e.g. window background around a
