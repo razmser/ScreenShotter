@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import Combine
+import UniformTypeIdentifiers
 
 /// The ways to capture, each with its own global shortcut.
 enum CaptureAction: UInt32, CaseIterable {
@@ -79,11 +80,24 @@ enum ExportAction: String, CaseIterable, Identifiable {
 }
 
 enum ImageFormat: String, CaseIterable, Identifiable {
-    case png, jpeg
+    case webp, png, jpeg
 
     var id: String { rawValue }
-    var title: String { self == .png ? "PNG" : "JPEG" }
-    var fileExtension: String { self == .png ? "png" : "jpg" }
+    var title: String {
+        switch self {
+        case .webp: "WebP"
+        case .png: "PNG"
+        case .jpeg: "JPEG"
+        }
+    }
+    var fileExtension: String { self == .jpeg ? "jpg" : rawValue }
+    var contentType: UTType {
+        switch self {
+        case .webp: .webP
+        case .png: .png
+        case .jpeg: .jpeg
+        }
+    }
 }
 
 /// User preferences, persisted in UserDefaults.
@@ -146,7 +160,7 @@ final class Settings: ObservableObject {
         afterCapture = defaults.string(forKey: Keys.afterCapture).flatMap(AfterCaptureAction.init) ?? .openEditor
         editorDoneAction = defaults.string(forKey: Keys.editorDoneAction).flatMap(ExportAction.init) ?? .copy
         confirmBeforeClosing = defaults.object(forKey: Keys.confirmBeforeClosing) as? Bool ?? true
-        imageFormat = defaults.string(forKey: Keys.imageFormat).flatMap(ImageFormat.init) ?? .png
+        imageFormat = defaults.string(forKey: Keys.imageFormat).flatMap(ImageFormat.init) ?? .webp
         showInMenuBar = defaults.object(forKey: Keys.showInMenuBar) as? Bool ?? true
         showRecordingClicks = defaults.object(forKey: Keys.showRecordingClicks) as? Bool ?? true
         if let path = defaults.string(forKey: Keys.saveFolder) {

@@ -225,7 +225,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         let settings = Settings.shared
         let format = settings.imageFormat
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [format == .png ? .png : .jpeg]
+        panel.allowedContentTypes = [format.contentType]
         panel.directoryURL = settings.saveFolder
         panel.nameFieldStringValue = "Screenshot.\(format.fileExtension)"
         panel.beginSheetModal(for: window) { [weak self] response in

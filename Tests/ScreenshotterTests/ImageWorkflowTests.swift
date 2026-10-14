@@ -51,9 +51,9 @@ final class ImageWorkflowTests: XCTestCase {
         XCTAssertEqual(pixels.data[pixels.offset(5, 30) + 3], 0, "Preview spills past the bottom crop edge")
     }
 
-    func testRetinaPNGAndJPEGExportPreserveDimensionsAndDPI() throws {
+    func testRetinaExportPreservesDimensionsAndDPI() throws {
         let shot = Screenshot(image: fixture(), scale: 2)
-        for format in [ImageFormat.png, .jpeg] {
+        for format in ImageFormat.allCases {
             let data = try XCTUnwrap(Output.encode(shot, as: format))
             let decoded = try XCTUnwrap(NSBitmapImageRep(data: data))
             XCTAssertEqual(decoded.pixelsWide, 80)
@@ -61,6 +61,20 @@ final class ImageWorkflowTests: XCTestCase {
             XCTAssertEqual(decoded.size.width, 40, accuracy: 0.1)
             XCTAssertEqual(decoded.size.height, 30, accuracy: 0.1)
         }
+    }
+
+    func testWebPIsLosslessAndKeepsAlphaAndColorProfile() throws {
+        var buffer = PixelBuffer(width: 4, height: 2, colorSpace: CGColorSpace(name: CGColorSpace.displayP3)!)
+        buffer.data.replaceSubrange(0..<8, with: [200, 100, 50, 255, 64, 32, 0, 128])  // opaque, half-transparent
+        let data = try XCTUnwrap(Output.encode(Screenshot(image: try XCTUnwrap(buffer.makeImage()), scale: 1),
+                                               as: .webp))
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        let decoded = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        XCTAssertEqual(decoded.colorSpace?.name, CGColorSpace.displayP3)
+        let pixels = try XCTUnwrap(PixelBuffer(decoded))
+        XCTAssertEqual(Array(pixels.data[0..<4]), [200, 100, 50, 255])
+        XCTAssertEqual(Array(pixels.data[4..<8]), [64, 32, 0, 128])
+        XCTAssertEqual(Array(pixels.data[8..<12]), [0, 0, 0, 0])
     }
 
     func testConcealClipsToImageAtRetinaScale() throws {

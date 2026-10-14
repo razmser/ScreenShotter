@@ -22,10 +22,10 @@ enum Output {
     }
 
     static func encode(_ shot: Screenshot, as format: ImageFormat) -> Data? {
-        let rep = bitmap(shot)
         switch format {
-        case .png: return rep.representation(using: .png, properties: [:])
-        case .jpeg: return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.9])
+        case .webp: return WebP.encode(shot.image, scale: shot.scale)
+        case .png: return bitmap(shot).representation(using: .png, properties: [:])
+        case .jpeg: return bitmap(shot).representation(using: .jpeg, properties: [.compressionFactor: 0.9])
         }
     }
 
