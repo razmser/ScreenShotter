@@ -38,13 +38,17 @@ done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET"
 
+# Notarization requires a secure timestamp (codesign ignores it for ad-hoc).
+timestamp="--timestamp"
 if [[ -z "${SIGN_IDENTITY:-}" ]]; then
+    # Local builds skip the timestamp so they work offline.
+    timestamp="--timestamp=none"
     # Select by SHA-1 hash: the name is ambiguous when a renewed certificate
     # with the same name is also in the keychain.
     SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
         | sed -n 's/^ *[0-9]*) \([0-9A-F]\{40\}\) "Apple Development:.*/\1/p' | head -n1)"
     SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 fi
-codesign --force --options runtime --sign "$SIGN_IDENTITY" "$APP"
+codesign --force --options runtime "$timestamp" --sign "$SIGN_IDENTITY" "$APP"
 
 echo "Built $APP (signed with: $SIGN_IDENTITY)"

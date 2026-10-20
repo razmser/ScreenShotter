@@ -21,16 +21,6 @@ brew install --cask razmser/tap/screenshotter
 Or download the zip from [Releases](https://github.com/razmser/ScreenShotter/releases)
 and move `ScreenShotter.app` to `/Applications`.
 
-Builds are ad-hoc signed and not notarized, so macOS blocks the first launch.
-Remove the quarantine flag after each install or upgrade:
-
-```sh
-xattr -dr com.apple.quarantine /Applications/ScreenShotter.app
-```
-
-Each update has a new signature, so Screen Recording permission must be granted
-again after upgrading — see [below](#screen-recording-permission-after-switching-builds).
-
 ## Usage
 
 | Default shortcut | Action |
