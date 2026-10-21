@@ -37,6 +37,13 @@ struct Shortcut: Codable, Equatable {
         return flags
     }
 
+    /// Whether macOS adds fn to this key's combos by itself. On other keys a macOS
+    /// shortcut with fn needs Globe held, so it doesn't clash with a recorded shortcut,
+    /// which never includes fn.
+    var impliesFn: Bool {
+        Self.functionKeys[Int(keyCode)] != nil || Self.navigationKeys.contains(Int(keyCode))
+    }
+
     var displayString: String {
         var result = ""
         if modifiers & UInt32(controlKey) != 0 { result += "⌃" }
@@ -89,5 +96,10 @@ struct Shortcut: Codable, Equatable {
         kVK_F7: "F7", kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10", kVK_F11: "F11", kVK_F12: "F12",
         kVK_F13: "F13", kVK_F14: "F14", kVK_F15: "F15", kVK_F16: "F16", kVK_F17: "F17",
         kVK_F18: "F18", kVK_F19: "F19", kVK_F20: "F20",
+    ]
+
+    private static let navigationKeys: Set<Int> = [
+        kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow, kVK_Home, kVK_End,
+        kVK_PageUp, kVK_PageDown, kVK_ForwardDelete, kVK_Help,
     ]
 }

@@ -2,14 +2,23 @@ import AppKit
 import Carbon.HIToolbox
 
 /// Why a shortcut won't trigger the app.
-enum HotKeyConflict {
+enum HotKeyConflict: Equatable {
     /// An enabled macOS shortcut (Keyboard Shortcuts settings) uses the combo and
-    /// takes precedence; registration doesn't report these.
-    case system
+    /// takes precedence; registration doesn't report these. Nil if System Settings
+    /// doesn't list it by name.
+    case system(SystemShortcut?)
     /// Registration was refused because another app holds the combo.
     case otherApp
 
-    var owner: String { self == .system ? "a macOS shortcut" : "another app" }
+    var isSystem: Bool { if case .system = self { true } else { false } }
+
+    var owner: String {
+        switch self {
+        case .system(let systemShortcut?): "the macOS shortcut “\(systemShortcut.name)”"
+        case .system(nil): "a macOS shortcut"
+        case .otherApp: "another app"
+        }
+    }
 }
 
 /// Registers system-wide hotkeys via Carbon. Unlike event taps this needs no
@@ -108,7 +117,8 @@ final class HotKeyManager: ObservableObject {
             if status != noErr { NSLog("ScreenShotter: failed to register hotkey \(shortcut.displayString): \(status)") }
         }
         // An enabled macOS shortcut wins over any app's, so it's the conflict to report.
-        let conflict: HotKeyConflict? = Self.isSystemShortcut(shortcut) ? .system : status != noErr ? .otherApp : nil
+        let conflict: HotKeyConflict? = Self.isSystemShortcut(shortcut) ? .system(SystemShortcut.enabled(matching: shortcut))
+            : status != noErr ? .otherApp : nil
         if conflicts[action] != conflict { conflicts[action] = conflict }
         return conflict == nil
     }
@@ -121,9 +131,12 @@ final class HotKeyManager: ObservableObject {
         else { return false }
         let modifierMask = cmdKey | shiftKey | optionKey | controlKey
         return hotKeys.contains { hotKey in
-            hotKey[kHISymbolicHotKeyEnabled] as? Bool == true
-                && hotKey[kHISymbolicHotKeyCode] as? Int == Int(shortcut.keyCode)
-                && (hotKey[kHISymbolicHotKeyModifiers] as? Int).map { $0 & modifierMask } == Int(shortcut.modifiers)
+            guard hotKey[kHISymbolicHotKeyEnabled] as? Bool == true,
+                  hotKey[kHISymbolicHotKeyCode] as? Int == Int(shortcut.keyCode),
+                  let modifiers = hotKey[kHISymbolicHotKeyModifiers] as? Int
+            else { return false }
+            return modifiers & modifierMask == Int(shortcut.modifiers)
+                && (modifiers & Int(kEventKeyModifierFnMask) == 0 || shortcut.impliesFn)
         }
     }
 

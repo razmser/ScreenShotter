@@ -76,6 +76,15 @@ final class EditorChangeTrackingTests: XCTestCase {
 
         XCTAssertTrue(HotKeyManager.isSystemShortcut(shortcut))
         XCTAssertFalse(manager.set(id, shortcut: shortcut))
-        XCTAssertEqual(manager.conflicts[id], .system)
+        XCTAssertEqual(manager.conflicts[id], .system(SystemShortcut.enabled(matching: shortcut)))
+    }
+
+    func testMacOSShortcutIsNamed() throws {
+        // ⌃↑ is Mission Control by default; macOS also stores the fn flag with it.
+        let shortcut = Shortcut(keyCode: UInt32(kVK_UpArrow), modifiers: UInt32(controlKey))
+        try XCTSkipUnless(HotKeyManager.isSystemShortcut(shortcut), "⌃↑ isn't a macOS shortcut here")
+        let systemShortcut = try XCTUnwrap(SystemShortcut.enabled(matching: shortcut))
+        XCTAssertFalse(systemShortcut.name.isEmpty)
+        XCTAssertFalse(systemShortcut.name.contains("DO_NOT_LOCALIZE"))
     }
 }

@@ -114,19 +114,38 @@ struct ShortcutRecorder: View {
         VStack(alignment: .leading, spacing: 4) {
             LabeledContent(label) { recorder }
             if let conflict, !isRecording {
-                Label {
-                    switch conflict {
-                    case .system:
-                        Text("Used by a macOS shortcut. Turn it off in [Keyboard Shortcuts](x-apple.systempreferences:com.apple.Keyboard-Settings.extension) or record another.")
-                    case .otherApp:
-                        Text("Used by another app. Record a different shortcut.")
+                HStack(alignment: .firstTextBaseline) {
+                    // Not a Label: in a Form it leaves a wide gap after the icon.
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                        switch conflict {
+                        case .system(let systemShortcut?):
+                            Text("Used by the macOS shortcut\n“\(systemShortcut.name)”")
+                        case .system(nil):
+                            Text("Used by a macOS shortcut. Turn it off in [Keyboard Shortcuts](x-apple.systempreferences:com.apple.Keyboard-Settings.extension) or record another.")
+                        case .otherApp:
+                            Text("Used by another app. Record a different shortcut.")
+                        }
                     }
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    if case .system(let systemShortcut?) = conflict {
+                        Spacer()
+                        HStack(spacing: 4) {
+                            Button {
+                                systemShortcut.disable()
+                                HotKeyManager.shared.refreshConflicts()
+                            } label: {
+                                Text("Unassign system")
+                                    .frame(minWidth: 120)
+                            }
+                            // Takes the clear button's place so this lines up with the recorder.
+                            Image(systemName: "xmark.circle.fill")
+                                .hidden()
+                        }
+                    }
                 }
-                .font(.caption)
-                .foregroundStyle(.red)
-                .fixedSize(horizontal: false, vertical: true)
             }
         }
         .onDisappear(perform: stop)

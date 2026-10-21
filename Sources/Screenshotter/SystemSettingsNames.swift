@@ -22,6 +22,11 @@ enum SystemSettingsNames {
         lookup(keyboardPane, table: "DefaultShortcutsTable", key: "Screenshots") ?? "Screenshots"
     }
 
+    /// A shortcut's name as Keyboard Shortcuts lists it, from its English name.
+    static func shortcut(_ englishName: String) -> String {
+        lookup(keyboardPane, table: "DefaultShortcutsTable", key: englishName) ?? englishName
+    }
+
     private static let keyboardPane = "/System/Library/ExtensionKit/Extensions/KeyboardSettings.appex"
 
     /// Reads `key` from the bundle's `.loctable` (all languages in one plist) directly:

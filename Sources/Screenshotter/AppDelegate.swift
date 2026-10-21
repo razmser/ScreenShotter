@@ -340,7 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         HotKeyManager.shared.refreshConflicts()
         let conflicts = HotKeyManager.shared.conflicts
-        if conflicts.values.contains(.system) {
+        if conflicts.values.contains(where: \.isSystem) {
             // Menu items can't hold real links, so the whole item opens System Settings.
             let title = NSMutableAttributedString(string: "Unassign system shortcuts in ")
             typealias Names = SystemSettingsNames
