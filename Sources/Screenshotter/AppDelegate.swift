@@ -124,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func selectArea(then handle: @escaping (AreaSelection) -> Void) {
         guard !isCapturing, areaSelection == nil else { return }
         isCapturing = true
-        Task {
+        Task { [self] in
             defer { isCapturing = false }
             do {
                 let captures = try await ScreenCapture.capture(NSScreen.screens)
