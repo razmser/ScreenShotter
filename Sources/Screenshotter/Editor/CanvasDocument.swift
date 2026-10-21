@@ -76,12 +76,13 @@ final class CanvasDocument {
         }
     }
 
-    /// Flattens annotations and crop into a full-resolution image.
-    func renderScreenshot() -> Screenshot {
+    /// Flattens annotations and crop into a full-resolution image, or nil if that failed.
+    func renderScreenshot() -> Screenshot? {
         if annotations.isEmpty && crop == fullRect {
             return Screenshot(image: base, scale: scale)
         }
-        return Screenshot(image: render(crop) ?? base, scale: scale)
+        // Never fall back to `base`: it would export what the crop and pixelation hide.
+        return render(crop).map { Screenshot(image: $0, scale: scale) }
     }
 
     /// The screenshot with `annotations` within `rect`, at full resolution.

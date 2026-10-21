@@ -91,7 +91,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         return
                     }
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
+                    guard NSPasteboard.general.setString(text, forType: .string) else {
+                        Toast.show("Couldn’t copy the text")
+                        return
+                    }
                     let lines = text.split(whereSeparator: \.isNewline).count
                     Toast.show(lines == 1 ? "Copied text" : "Copied \(lines) lines of text")
                 } catch {
@@ -214,8 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // QuickTime Player, by default, can trim it.
                 NSWorkspace.shared.open(url)
             case .copy, .copyAndSave:
-                Output.copyFile(url)
-                messages.insert("Copied to clipboard", at: 0)
+                messages.insert(Output.copyFile(url) ? "Copied to clipboard" : "Couldn’t copy to clipboard", at: 0)
             case .save:
                 break
             }

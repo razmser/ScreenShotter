@@ -42,7 +42,7 @@ final class AnnotationEditingTests: XCTestCase {
         try mouse(canvas, .leftMouseDragged, CGPoint(x: 150, y: 40))
         try mouse(canvas, .leftMouseDragged, CGPoint(x: 150, y: 110))
         try mouse(canvas, .leftMouseUp, CGPoint(x: 150, y: 110))
-        let pixels = try XCTUnwrap(PixelBuffer(canvas.renderScreenshot().image))
+        let pixels = try XCTUnwrap(PixelBuffer(XCTUnwrap(canvas.renderScreenshot()).image))
         func pixel(_ x: Int, _ y: Int) -> [UInt8] {
             Array(pixels.data[pixels.offset(x, y)..<pixels.offset(x, y) + 4])
         }
@@ -205,7 +205,7 @@ final class AnnotationEditingTests: XCTestCase {
     }
 
     func testTextSizeControlsFollowActiveTool() throws {
-        let controller = EditorWindowController(screenshot: try canvas().renderScreenshot())
+        let controller = EditorWindowController(screenshot: try XCTUnwrap(canvas().renderScreenshot()))
         defer { controller.close() }
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
         let views = descendants(try XCTUnwrap(controller.window?.contentView))
@@ -228,7 +228,7 @@ final class AnnotationEditingTests: XCTestCase {
         canvas.tool = .select
         try mouse(canvas, .leftMouseDown, CGPoint(x: 50, y: 40))
         try mouse(canvas, .leftMouseUp, CGPoint(x: 50, y: 40))
-        let selected = try XCTUnwrap(PixelBuffer(canvas.renderScreenshot().image))
+        let selected = try XCTUnwrap(PixelBuffer(XCTUnwrap(canvas.renderScreenshot()).image))
         let changes = canvas.changeCount
         try mouse(canvas, .leftMouseDown, CGPoint(x: 50, y: 40))
         try mouse(canvas, .leftMouseDragged, CGPoint(x: 60, y: 45))
@@ -236,7 +236,7 @@ final class AnnotationEditingTests: XCTestCase {
         try mouse(canvas, .leftMouseUp, CGPoint(x: 70, y: 50))
         XCTAssertEqual(canvas.changeCount, changes + 1)
         canvas.undo(nil)
-        let unselected = try XCTUnwrap(PixelBuffer(canvas.renderScreenshot().image))
+        let unselected = try XCTUnwrap(PixelBuffer(XCTUnwrap(canvas.renderScreenshot()).image))
         XCTAssertEqual(selected.data, unselected.data, "Selection handles must never appear in exports")
         canvas.undo(nil)
         XCTAssertTrue(canvas.annotations.isEmpty, "One undo restores the whole drag, next undo removes the original mark")
@@ -305,7 +305,7 @@ final class AnnotationEditingTests: XCTestCase {
         try mouse(canvas, .leftMouseDragged, CGPoint(x: 180, y: 88))
         try mouse(canvas, .leftMouseDragged, CGPoint(x: 30, y: 88))
         try mouse(canvas, .leftMouseUp, CGPoint(x: 30, y: 88))
-        let pixels = try XCTUnwrap(PixelBuffer(canvas.renderScreenshot().image))
+        let pixels = try XCTUnwrap(PixelBuffer(XCTUnwrap(canvas.renderScreenshot()).image))
         XCTAssertLessThan(pixels.data[pixels.offset(80, 88)], 20)
         XCTAssertEqual(pixels.data[pixels.offset(80, 80) + 2], pixels.data[pixels.offset(170, 80) + 2])
         XCTAssertGreaterThan(pixels.data[pixels.offset(80, 80) + 2], 100, "Overlapping nib samples are composited once")

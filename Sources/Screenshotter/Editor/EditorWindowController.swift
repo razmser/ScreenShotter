@@ -204,23 +204,33 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window?.makeFirstResponder(canvas)
     }
 
+    /// The screenshot with its edits, or nil (after saying so) if it couldn't be rendered.
+    private func renderedScreenshot() -> Screenshot? {
+        if let shot = canvas.renderScreenshot() { return shot }
+        let alert = NSAlert()
+        alert.messageText = "Couldn’t render the screenshot"
+        alert.informativeText = "Nothing was copied or saved."
+        alert.runModal()
+        return nil
+    }
+
     /// The Copy button and ⌘C, which reaches here from the canvas via the responder chain.
     @objc func copy(_ sender: Any?) {
-        Output.export(canvas.renderScreenshot(), copy: true, save: false)
-        exportedChangeCount = canvas.changeCount
+        if let shot = renderedScreenshot(), Output.export(shot, copy: true, save: false).copied {
+            exportedChangeCount = canvas.changeCount
+        }
         window?.makeFirstResponder(canvas)
     }
 
     @objc func saveImage(_ sender: Any?) {
-        if Output.export(canvas.renderScreenshot(), copy: false, save: true) {
+        if let shot = renderedScreenshot(), Output.export(shot, copy: false, save: true).saved {
             exportedChangeCount = canvas.changeCount
         }
         window?.makeFirstResponder(canvas)
     }
 
     @objc func saveImageAs(_ sender: Any?) {
-        guard let window else { return }
-        let shot = canvas.renderScreenshot()
+        guard let window, let shot = renderedScreenshot() else { return }
         let changeCount = canvas.changeCount
         let settings = Settings.shared
         let format = settings.imageFormat
@@ -241,11 +251,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc func done(_ sender: Any?) {
+        guard let shot = renderedScreenshot() else { return }
         let action = Settings.shared.editorDoneAction
-        let succeeded = Output.export(canvas.renderScreenshot(), copy: action.copies, save: action.saves)
-        // Copying still happened if only saving failed.
-        if succeeded || action.copies { exportedChangeCount = canvas.changeCount }
-        if succeeded { close() }
+        let (copied, saved) = Output.export(shot, copy: action.copies, save: action.saves)
+        // Either one keeps the screenshot, e.g. copying still happened if only saving failed.
+        if copied || saved { exportedChangeCount = canvas.changeCount }
+        // Once saved it's kept, and Done again would save a second file.
+        if action.saves ? saved : copied { close() }
     }
 
     /// Esc, ⌘W and the close button come here; Done exports first and closes directly.

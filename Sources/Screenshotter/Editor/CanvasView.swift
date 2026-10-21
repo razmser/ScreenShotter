@@ -220,8 +220,8 @@ final class CanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
         context.restoreGState()
     }
 
-    /// Flattens annotations and crop into a full-resolution image.
-    func renderScreenshot() -> Screenshot {
+    /// Flattens annotations and crop into a full-resolution image, or nil if that failed.
+    func renderScreenshot() -> Screenshot? {
         commitText()
         finishManipulation()
         return document.renderScreenshot()

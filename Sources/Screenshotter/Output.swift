@@ -9,16 +9,16 @@ enum Output {
         return rep
     }
 
-    static func copy(_ shot: Screenshot) {
+    /// Returns false if the image didn't reach the pasteboard, e.g. another app took it meanwhile.
+    static func copy(_ shot: Screenshot) -> Bool {
         let rep = bitmap(shot)
+        // Encoded first, so a failure leaves the clipboard as it was.
+        guard let png = rep.representation(using: .png, properties: [:]), let tiff = rep.tiffRepresentation
+        else { return false }
         let pasteboard = NSPasteboard.general
         pasteboard.declareTypes([.png, .tiff], owner: nil)
-        if let png = rep.representation(using: .png, properties: [:]) {
-            pasteboard.setData(png, forType: .png)
-        }
-        if let tiff = rep.tiffRepresentation {
-            pasteboard.setData(tiff, forType: .tiff)
-        }
+        // A write fails once another app has taken the pasteboard.
+        return pasteboard.setData(png, forType: .png) && pasteboard.setData(tiff, forType: .tiff)
     }
 
     static func encode(_ shot: Screenshot, as format: ImageFormat) -> Data? {
@@ -73,34 +73,36 @@ enum Output {
     }
 
     /// Puts a file on the pasteboard the way Finder copies one, e.g. a finished recording.
-    static func copyFile(_ url: URL) {
+    /// Returns false if that failed.
+    static func copyFile(_ url: URL) -> Bool {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([url as NSURL])
+        return NSPasteboard.general.writeObjects([url as NSURL])
     }
 
-    /// Copies and/or saves, then reports the result with a toast (or an alert on failure).
-    /// Returns false if saving failed.
+    /// Copies and/or saves, then reports the result with a toast (and an alert if saving failed).
+    /// Returns which of them worked.
     @discardableResult
-    static func export(_ shot: Screenshot, copy shouldCopy: Bool, save shouldSave: Bool) -> Bool {
-        var succeeded = true
+    static func export(_ shot: Screenshot, copy shouldCopy: Bool,
+                       save shouldSave: Bool) -> (copied: Bool, saved: Bool) {
+        var copied = false, saved = false
         var messages: [String] = []
         if shouldCopy {
-            copy(shot)
-            messages.append("Copied to clipboard")
+            copied = copy(shot)
+            messages.append(copied ? "Copied to clipboard" : "Couldn’t copy to clipboard")
         }
         if shouldSave {
             do {
                 let url = try save(shot)
                 messages.append("Saved \(url.lastPathComponent)")
+                saved = true
             } catch {
                 NSApp.activate()
                 NSAlert(error: error).runModal()
-                succeeded = false
             }
         }
         if !messages.isEmpty {
             Toast.show(messages.joined(separator: "\n"))
         }
-        return succeeded
+        return (copied, saved)
     }
 }
