@@ -28,17 +28,23 @@ fi
 # The notary service only accepts archives, but the ticket is stapled to the
 # app itself, so this zip is thrown away afterwards.
 ditto -c -k --keepParent "$APP" "$ZIP"
-result="$(xcrun notarytool submit "$ZIP" "${auth[@]}" --wait --output-format json)" || true
+submission="$(xcrun notarytool submit "$ZIP" "${auth[@]}" --output-format json)" || true
 rm -f "$ZIP"
+id="$(plutil -extract id raw -o - - <<<"$submission" 2>/dev/null || true)"
+if [[ -z "$id" ]]; then
+    echo "Upload failed: $submission" >&2
+    exit 1
+fi
+# Printed up front so a slow submission can be followed with
+# `xcrun notarytool info <id>` even if the wait below is interrupted.
+echo "Submitted $id, waiting for Apple's verdict"
+result="$(xcrun notarytool wait "$id" "${auth[@]}" --output-format json)" || true
 
 # notarytool can exit 0 for a rejected submission, so check the status.
 status="$(plutil -extract status raw -o - - <<<"$result" 2>/dev/null || true)"
 if [[ "$status" != "Accepted" ]]; then
-    echo "Notarization failed (status: ${status:-unknown}): $result" >&2
-    id="$(plutil -extract id raw -o - - <<<"$result" 2>/dev/null || true)"
-    if [[ -n "$id" ]]; then
-        xcrun notarytool log "$id" "${auth[@]}" >&2
-    fi
+    echo "Notarization of $id failed (status: ${status:-unknown}): $result" >&2
+    xcrun notarytool log "$id" "${auth[@]}" >&2
     exit 1
 fi
 
