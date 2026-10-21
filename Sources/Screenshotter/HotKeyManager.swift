@@ -10,8 +10,6 @@ enum HotKeyConflict: Equatable {
     /// Registration was refused because another app holds the combo.
     case otherApp
 
-    var isSystem: Bool { if case .system = self { true } else { false } }
-
     var owner: String {
         switch self {
         case .system(let systemShortcut?): "the macOS shortcut “\(systemShortcut.name)”"

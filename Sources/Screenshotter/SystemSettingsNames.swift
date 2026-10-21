@@ -1,44 +1,20 @@
 import Foundation
 
-/// Names of System Settings panes as macOS shows them in the user's language, so
-/// instructions match what the user sees. Falls back to English if a lookup fails.
+/// Names from System Settings as macOS shows them in the user's language, so
+/// messages match what the user sees. Falls back to English if a lookup fails.
 enum SystemSettingsNames {
-    static var systemSettings: String {
-        lookup("/System/Applications/System Settings.app", table: "InfoPlist", key: "CFBundleName")
-            ?? "System Settings"
-    }
-
-    static var keyboard: String {
-        lookup(keyboardPane, table: "InfoPlist", key: "CFBundleDisplayName") ?? "Keyboard"
-    }
-
-    static var keyboardShortcuts: String {
-        lookup(keyboardPane, table: "Localizable", key: "Keyboard Shortcuts…")
-            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "…⋯").union(.whitespaces)) }
-            ?? "Keyboard Shortcuts"
-    }
-
-    static var screenshots: String {
-        lookup(keyboardPane, table: "DefaultShortcutsTable", key: "Screenshots") ?? "Screenshots"
-    }
-
-    /// A shortcut's name as Keyboard Shortcuts lists it, from its English name.
+    /// A shortcut's name as Keyboard Shortcuts lists it, from its English name. Reads the
+    /// Keyboard pane's `.loctable` (all languages in one plist) directly: Bundle's own
+    /// lookup would follow this app's language, which is English only.
     static func shortcut(_ englishName: String) -> String {
-        lookup(keyboardPane, table: "DefaultShortcutsTable", key: englishName) ?? englishName
-    }
-
-    private static let keyboardPane = "/System/Library/ExtensionKit/Extensions/KeyboardSettings.appex"
-
-    /// Reads `key` from the bundle's `.loctable` (all languages in one plist) directly:
-    /// Bundle's own lookup would follow this app's language, which is English only.
-    private static func lookup(_ bundlePath: String, table: String, key: String) -> String? {
-        let url = URL(fileURLWithPath: bundlePath).appending(path: "Contents/Resources/\(table).loctable")
+        let url = URL(fileURLWithPath: "/System/Library/ExtensionKit/Extensions/KeyboardSettings.appex")
+            .appending(path: "Contents/Resources/DefaultShortcutsTable.loctable")
         guard let languages = NSDictionary(contentsOf: url) as? [String: Any],
               let language = Bundle.preferredLocalizations(from: Array(languages.keys),
                                                            forPreferences: Locale.preferredLanguages).first,
-              let value = (languages[language] as? [String: Any])?[key] as? String
-        else { return nil }
-        // Some names carry soft hyphens for wrapping, e.g. German "System­einstellungen".
+              let value = (languages[language] as? [String: Any])?[englishName] as? String
+        else { return englishName }
+        // Some names carry soft hyphens for wrapping, e.g. Danish "Præsentations­overligger".
         return value.replacingOccurrences(of: "\u{AD}", with: "")
     }
 }

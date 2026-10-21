@@ -340,30 +340,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         HotKeyManager.shared.refreshConflicts()
         let conflicts = HotKeyManager.shared.conflicts
-        if conflicts.values.contains(where: \.isSystem) {
-            // Menu items can't hold real links, so the whole item opens System Settings.
-            let title = NSMutableAttributedString(string: "Unassign system shortcuts in ")
-            typealias Names = SystemSettingsNames
-            title.append(NSAttributedString(string: "\(Names.systemSettings) → \(Names.keyboard)", attributes: [
-                .foregroundColor: NSColor.linkColor, .underlineStyle: NSUnderlineStyle.single.rawValue,
-            ]))
-            title.append(NSAttributedString(string: " →\n\(Names.keyboardShortcuts) → \(Names.screenshots) to avoid conflicts."))
-            title.addAttribute(.font, value: NSFont.menuFont(ofSize: 0), range: NSRange(location: 0, length: title.length))
-            let warning = item(title.string, #selector(openKeyboardSettings), nil)
-            warning.attributedTitle = title
+        if !conflicts.isEmpty {
+            // Settings explains each conflict next to its shortcut.
+            let warning = item("Shortcut conflict", #selector(openSettings), nil)
             warning.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill",
                                     accessibilityDescription: "Warning")
             menu.addItem(warning)
+            menu.addItem(.separator())
         }
-        for action in CaptureAction.available {
-            guard conflicts[action] == .otherApp, let shortcut = settings.shortcuts[action] else { continue }
-            let warning = item("\(shortcut.displayString) for \(action.title) is used by another app…",
-                               #selector(openSettings), nil)
-            warning.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill",
-                                    accessibilityDescription: "Warning")
-            menu.addItem(warning)
-        }
-        if menu.numberOfItems > 0 { menu.addItem(.separator()) }
         for action in CaptureAction.available {
             let capture = item(action.title, #selector(captureFromMenu(_:)),
                                conflicts[action] == nil ? settings.shortcuts[action] : nil)
@@ -427,12 +411,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func openSaveFolder() {
         try? FileManager.default.createDirectory(at: settings.saveFolder, withIntermediateDirectories: true)
         NSWorkspace.shared.open(settings.saveFolder)
-    }
-
-    @objc private func openKeyboardSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension") {
-            NSWorkspace.shared.open(url)
-        }
     }
 
     @objc func openSettings() {
