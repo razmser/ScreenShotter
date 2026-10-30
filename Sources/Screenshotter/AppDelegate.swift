@@ -85,7 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         selectShot { shot in
             Task {
                 do {
-                    let text = try await TextRecognition.recognize(shot.image)
+                    let text = try await TextRecognition.recognize(shot.image, onCompile: {
+                        Toast.show("Preparing text recognition, this can take a minute…")
+                    })
                     guard !text.isEmpty else {
                         Toast.show("No text found")
                         return
