@@ -1,24 +1,29 @@
+import AppKit
 import CoreImage
 import CoreText
 import Vision
 
 /// Extracts text from a screenshot: QR code contents if there are any, otherwise OCR.
 ///
-/// Vision compiles its OCR model into our caches folder, which macOS may purge while we run.
-/// A process that had loaded the model then fails every OCR, but picks the model up again
-/// once a fresh process recompiles it, so a helper run of this executable does that.
+/// Vision compiles its OCR model into our caches folder on first use, which takes about half a minute,
+/// and macOS may purge it at any time. A process that had loaded the model then fails every OCR, but
+/// picks the model up again once a fresh process recompiles it, so a helper run of this executable does that.
 enum TextRecognition {
     /// Launching with this argument compiles the model and exits instead (see `main.swift`).
     static let compileArgument = "--compile-text-model"
 
     private static var compiling: Task<Void, Never>?
-    private static var checks: NSBackgroundActivityScheduler?
+    private static var helperExited = Date.distantPast
 
-    /// `onCompile` runs before waiting for the model to be recompiled, which takes about half a minute.
+    /// `onCompile` runs before waiting for the model to be compiled, which takes about half a minute.
     @concurrent
     static func recognize(_ image: CGImage, onCompile: @MainActor () -> Void = {}) async throws -> String {
         if let codes = qrCodes(in: image) { return codes }
-        await scheduleChecks()
+        // Wait for the helper rather than compile the same model again in this process.
+        if let compile = await compiling {
+            await onCompile()
+            await compile.value
+        }
         do {
             return try ocr(image)
         } catch {
@@ -37,22 +42,35 @@ enum TextRecognition {
         return (try? ocr(sample)) != nil
     }
 
-    /// Hourly while the Mac is awake, recompiles a purged model so the next capture needn't wait.
-    /// Starts with the first OCR: until this process loads the model, a purge can't break it.
-    private static func scheduleChecks() {
-        guard checks == nil else { return }
-        let scheduler = NSBackgroundActivityScheduler(identifier: "com.razmser.screenshotter.check-text-model")
-        scheduler.interval = 60 * 60
-        scheduler.repeats = true
-        scheduler.qualityOfService = .utility
-        scheduler.schedule { completion in
-            guard !modelWorks() else { return completion(.finished) }
-            Task {
-                await compileInHelper()
-                completion(.finished)
-            }
+    /// Compiles a missing or purged model in the helper at launch and right after a purge, so captures
+    /// needn't wait for it. When the model is already compiled the helper takes well under a second,
+    /// and this process doesn't load the model until the first capture.
+    static func keepModelReady() {
+        Task { await compileInHelper() }
+        watchForPurges()
+    }
+
+    /// Recompiles once files disappear from our caches folder, which is what a purge looks like.
+    /// A compile deletes temporary files there too, so removals reported during a helper run or just after
+    /// it are ignored. That also keeps a failing compile from retrying forever: the next capture compiles
+    /// the model, in this process if it hasn't loaded it yet.
+    private static func watchForPurges() {
+        guard let id = Bundle.main.bundleIdentifier else { return }
+        let caches = URL.cachesDirectory.appending(path: id)
+        let callback: FSEventStreamCallback = { _, _, count, _, flags, _ in
+            let purge = FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagMustScanSubDirs)
+            guard (0..<count).contains(where: { flags[$0] & purge != 0 }),
+                  TextRecognition.compiling == nil,
+                  Date.now.timeIntervalSince(TextRecognition.helperExited) > 10
+            else { return }
+            Task { await TextRecognition.compileInHelper() }
         }
-        checks = scheduler
+        guard let stream = FSEventStreamCreate(nil, callback, nil, [caches.path] as CFArray,
+                                               FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 5,
+                                               FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents))
+        else { return }
+        FSEventStreamSetDispatchQueue(stream, .main)
+        FSEventStreamStart(stream)
     }
 
     /// Recompiles the model in a fresh process, or waits for the compile that's already running.
@@ -80,6 +98,7 @@ enum TextRecognition {
         compiling = task
         await task.value
         compiling = nil
+        helperExited = .now
     }
 
     /// A line of text: recognizing it compiles every model a capture uses.

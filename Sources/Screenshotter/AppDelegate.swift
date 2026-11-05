@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
         setupStatusItem()
+        TextRecognition.keepModelReady()
 
         HotKeyManager.shared.onHotKey = { [weak self] action in self?.capture(action) }
         settings.$shortcuts
