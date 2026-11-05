@@ -55,8 +55,9 @@ just test      # image rendering, export, OCR/QR, and crop regression checks
 The OCR/QR tests require access to macOS Vision and Core Image services; run them
 from a normal local terminal rather than a restricted shell sandbox.
 
-On first capture macOS asks for **Screen & System Audio Recording** permission
-(System Settings → Privacy & Security). Relaunch the app after granting it.
+On launch macOS asks for **Screen & System Audio Recording** permission
+(System Settings → Privacy & Security). Every capture mode needs it, not just
+screen recording. Relaunch the app after granting it.
 
 The build script signs with your "Apple Development" identity if one exists, so
 the permission survives rebuilds. Set `SIGN_IDENTITY=-` for ad-hoc signing (you
