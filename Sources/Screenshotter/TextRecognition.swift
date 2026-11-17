@@ -2,6 +2,7 @@ import AppKit
 import CoreImage
 import CoreText
 import Vision
+import os
 
 /// Extracts text from a screenshot: QR code contents if there are any, otherwise OCR.
 ///
@@ -11,6 +12,9 @@ import Vision
 enum TextRecognition {
     /// Launching with this argument compiles the model and exits instead (see `main.swift`).
     static let compileArgument = "--compile-text-model"
+
+    /// Compiles and failures, kept on disk: `log show --predicate 'subsystem == "com.razmser.screenshotter"'`.
+    private nonisolated static let log = Logger(subsystem: "com.razmser.screenshotter", category: "TextRecognition")
 
     private static var compiling: Task<Void, Never>?
     private static var helperExited = Date.distantPast
@@ -27,26 +31,40 @@ enum TextRecognition {
         do {
             return try ocr(image)
         } catch {
+            log.error("Recognition failed: \(String(describing: error), privacy: .public)")
             // If the model works, the image is the problem (e.g. too small) or a compile just finished.
             if !modelWorks() {
                 await onCompile()
-                await compileInHelper()
+                await compileInHelper(after: "recognition failure")
             }
-            return try ocr(image)
+            do {
+                return try ocr(image)
+            } catch {
+                log.error("Recognition failed again: \(String(describing: error), privacy: .public)")
+                throw error
+            }
         }
     }
 
     /// Recognizes sample text, which in a fresh process compiles the model. Also handles `compileArgument`.
     nonisolated static func modelWorks() -> Bool {
         guard let sample = sampleText() else { return false }
-        return (try? ocr(sample)) != nil
+        let start = Date.now
+        do {
+            _ = try ocr(sample)
+            log.notice("Model recognized the sample text in \(Date.now.timeIntervalSince(start), format: .fixed(precision: 1)) s")
+            return true
+        } catch {
+            log.error("Model failed on the sample text: \(String(describing: error), privacy: .public)")
+            return false
+        }
     }
 
     /// Compiles a missing or purged model in the helper at launch and right after a purge, so captures
     /// needn't wait for it. When the model is already compiled the helper takes well under a second,
     /// and this process doesn't load the model until the first capture.
     static func keepModelReady() {
-        Task { await compileInHelper() }
+        Task { await compileInHelper(after: "app launch") }
         watchForPurges()
     }
 
@@ -63,35 +81,45 @@ enum TextRecognition {
                   TextRecognition.compiling == nil,
                   Date.now.timeIntervalSince(TextRecognition.helperExited) > 10
             else { return }
-            Task { await TextRecognition.compileInHelper() }
+            Task { await TextRecognition.compileInHelper(after: "cache purge") }
         }
         guard let stream = FSEventStreamCreate(nil, callback, nil, [caches.path] as CFArray,
                                                FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 5,
                                                FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents))
-        else { return }
+        else { return log.error("Couldn't watch the caches folder for purges") }
         FSEventStreamSetDispatchQueue(stream, .main)
         FSEventStreamStart(stream)
     }
 
     /// Recompiles the model in a fresh process, or waits for the compile that's already running.
-    private static func compileInHelper() async {
+    private static func compileInHelper(after reason: String) async {
         if let compiling { return await compiling.value }
+        log.notice("Starting the compile helper after \(reason, privacy: .public)")
+        let start = Date.now
         let task = Task {
             await withCheckedContinuation { continuation in
                 let process = Process()
                 process.executableURL = Bundle.main.executableURL
                 process.arguments = [compileArgument]
-                process.terminationHandler = { _ in continuation.resume() }
+                process.terminationHandler = { process in
+                    let status = process.terminationStatus
+                    log.log(level: status == 0 ? .default : .error,
+                            "Compile helper exited with status \(status) after \(Date.now.timeIntervalSince(start), format: .fixed(precision: 1)) s")
+                    continuation.resume()
+                }
                 do {
                     try process.run()
                 } catch {
+                    log.error("Couldn't start the compile helper: \(String(describing: error), privacy: .public)")
                     process.terminationHandler = nil
                     continuation.resume()
                     return
                 }
                 // Don't leave captures waiting on a stuck helper.
                 DispatchQueue.global().asyncAfter(deadline: .now() + 180) {
-                    if process.isRunning { process.terminate() }
+                    guard process.isRunning else { return }
+                    log.error("Compile helper is stuck, terminating it")
+                    process.terminate()
                 }
             }
         }
